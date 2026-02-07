@@ -2,33 +2,90 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title> AI project</title>
+
+  <!-- Mobile safe viewport -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+
+  <title>AI project</title>
+
   <style>
-    html, body { height: 100%; margin: 0; background: #0b1020; overflow: hidden; }
-    canvas { display:block; width:100vw; height:100vh; }
+    :root { --vh: 1vh; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #0b1020;
+      overflow: hidden;
+      /* Prevent scroll + pull-to-refresh gestures */
+      overscroll-behavior: none;
+      touch-action: none;
+    }
+
+    /* Use dynamic height for iOS address bar */
+    canvas {
+      display: block;
+      width: 100vw;
+      height: calc(var(--vh) * 100);
+      touch-action: none;
+    }
+
     .hint{
-      position:fixed; left:50%; transform:translateX(-50%);
-      bottom:14px; font: 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
-      color: rgba(255,255,255,.85); user-select:none;
-      background: rgba(0,0,0,.35); padding:8px 12px; border-radius:999px;
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: max(14px, env(safe-area-inset-bottom));
+      font: 14px/1.25 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      color: rgba(255,255,255,.88);
+      user-select: none;
+      background: rgba(0,0,0,.35);
+      padding: 8px 12px;
+      border-radius: 999px;
       backdrop-filter: blur(6px);
       max-width: 92vw;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      text-align:center;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    /* Optional joystick (mobile only) */
+    .joy {
+      position: fixed;
+      left: max(16px, env(safe-area-inset-left));
+      bottom: calc(max(16px, env(safe-area-inset-bottom)) + 52px);
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.07);
+      border: 1px solid rgba(255,255,255,.12);
+      backdrop-filter: blur(8px);
+      display: none; /* shown via JS on touch devices */
+      touch-action: none;
+      user-select: none;
+    }
+    .joy .knob{
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      transform: translate(-50%,-50%);
+      background: rgba(255,255,255,.18);
+      border: 1px solid rgba(255,255,255,.18);
     }
   </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div class="hint">Move: WASD/Arrows • Mobile: drag flower • Deliver to envelope 💌 • Tap empty space to replay</div>
+  <canvas id="c"></canvas>
+  <div class="joy" id="joy"><div class="knob" id="knob"></div></div>
+  <div class="hint">Move: WASD/Arrows • Mobile: drag flower or joystick • Deliver to envelope 💌 • Tap empty space to replay</div>
 
 <script>
 (() => {
   const canvas = document.getElementById("c");
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { alpha: false });
 
   // ==== CUSTOMIZE THIS ====
   const TO_NAME = "Subs";
@@ -36,12 +93,7 @@
     "I’d give you a real rose, but this one is digital because I’m eco-friendly, broke, and my credit card is maxed out 🌹\n\nAlso, thanks for sticking with me fr.";
   // ========================
 
-  // === MAIN BACKGROUND ===
-  // keep your outside background SAME as before (night gradient + stars)
-  // (so we do NOT use your image as the whole scene)
-
   // === NOTE BOX BACKGROUND IMAGE (INSIDE MESSAGE BOX ONLY) ===
-  // Put your image in the same folder as this HTML and name it: note_bg.png
   const noteBg = new Image();
   noteBg.src = "note_bg.png";
   let noteBgReady = false;
@@ -51,17 +103,33 @@
   const SPARKLE_TARGET = 10;
   const DELIVERY_RADIUS = 80;
 
+  // ---------- Mobile viewport height fix (iOS) ----------
+  function setVh(){
+    const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight) * 0.01;
+    document.documentElement.style.setProperty('--vh', `${vh}px`);
+  }
+  setVh();
+  window.addEventListener('resize', setVh, {passive:true});
+  window.visualViewport && window.visualViewport.addEventListener('resize', setVh, {passive:true});
+
   let DPR;
   function resize(){
+    const w = window.innerWidth;
+    const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
     DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-    canvas.width  = Math.floor(innerWidth  * DPR);
-    canvas.height = Math.floor(innerHeight * DPR);
-    canvas.style.width = innerWidth + "px";
-    canvas.style.height = innerHeight + "px";
+    canvas.width  = Math.floor(w * DPR);
+    canvas.height = Math.floor(h * DPR);
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
     ctx.setTransform(DPR,0,0,DPR,0,0);
   }
   addEventListener("resize", resize, {passive:true});
   resize();
+
+  // Prevent iOS double-tap zoom & scroll on canvas area
+  canvas.addEventListener('touchstart', (e)=>e.preventDefault(), {passive:false});
+  canvas.addEventListener('touchmove',  (e)=>e.preventDefault(), {passive:false});
+  canvas.addEventListener('touchend',   (e)=>e.preventDefault(), {passive:false});
 
   // Helpers
   const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
@@ -70,7 +138,11 @@
   const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
   const easeInOutSine = t => -(Math.cos(Math.PI * t) - 1) / 2;
 
-  function px(){ return { w: innerWidth, h: innerHeight }; }
+  function px(){
+    const w = window.innerWidth;
+    const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    return { w, h };
+  }
 
   // Background stars
   const stars = Array.from({length: 140}, () => ({
@@ -80,14 +152,12 @@
   function drawBackground(time){
     const {w,h} = px();
 
-    // gradient sky (outside background stays same)
     const g = ctx.createLinearGradient(0,0,0,h);
     g.addColorStop(0, "#0b1020");
     g.addColorStop(1, "#1a0f2b");
     ctx.fillStyle = g;
     ctx.fillRect(0,0,w,h);
 
-    // soft glow
     ctx.globalAlpha = 0.20;
     const glow = ctx.createRadialGradient(w*0.25,h*0.2, 10, w*0.25,h*0.2, h*0.9);
     glow.addColorStop(0, "#7b5cff");
@@ -96,7 +166,6 @@
     ctx.fillRect(0,0,w,h);
     ctx.globalAlpha = 1;
 
-    // stars
     for(const s of stars){
       const tw = 0.4 + 0.6*Math.sin(time*0.001 + s.tw);
       ctx.globalAlpha = 0.35 + 0.35*tw;
@@ -215,10 +284,57 @@
     }
   }
 
-  // Input
+  // Input (keyboard)
   const keys = new Set();
   addEventListener("keydown", (e)=> keys.add(e.key.toLowerCase()));
   addEventListener("keyup",   (e)=> keys.delete(e.key.toLowerCase()));
+
+  // ---------- Mobile joystick (optional) ----------
+  const isTouch = matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+  const joy = document.getElementById("joy");
+  const knob = document.getElementById("knob");
+  let joyActive = false, joyId = null;
+  let joyVec = { x: 0, y: 0 }; // -1..1
+
+  if(isTouch){
+    joy.style.display = "block";
+    const joyCenter = () => {
+      const r = joy.getBoundingClientRect();
+      return { cx: r.left + r.width/2, cy: r.top + r.height/2, radius: r.width/2 };
+    };
+
+    const setKnob = (dx,dy)=>{
+      const c = joyCenter();
+      const max = c.radius - 26; // knob radius
+      const len = Math.hypot(dx,dy);
+      const k = len > max ? max/len : 1;
+      const nx = dx*k, ny = dy*k;
+      knob.style.transform = `translate(calc(-50% + ${nx}px), calc(-50% + ${ny}px))`;
+      joyVec.x = clamp(nx / max, -1, 1);
+      joyVec.y = clamp(ny / max, -1, 1);
+    };
+
+    joy.addEventListener("pointerdown", (e)=>{
+      joyActive = true; joyId = e.pointerId;
+      joy.setPointerCapture(joyId);
+      const c = joyCenter();
+      setKnob(e.clientX - c.cx, e.clientY - c.cy);
+    }, {passive:false});
+
+    joy.addEventListener("pointermove", (e)=>{
+      if(!joyActive || e.pointerId !== joyId) return;
+      const c = joyCenter();
+      setKnob(e.clientX - c.cx, e.clientY - c.cy);
+    }, {passive:false});
+
+    const endJoy = ()=>{
+      joyActive = false; joyId = null;
+      joyVec.x = 0; joyVec.y = 0;
+      knob.style.transform = "translate(-50%,-50%)";
+    };
+    joy.addEventListener("pointerup", endJoy, {passive:true});
+    joy.addEventListener("pointercancel", endJoy, {passive:true});
+  }
 
   const state = {
     t: 0,
@@ -236,6 +352,7 @@
     }
   };
 
+  // Pointer controls: drag flower; tap empty to replay
   canvas.addEventListener("pointerdown", (e)=>{
     const mx = e.clientX, my = e.clientY;
     if(dist2(mx,my, state.flower.x, state.flower.y) < 70*70){
@@ -255,6 +372,7 @@
   }, {passive:true});
 
   canvas.addEventListener("pointerup", ()=>{ state.dragging = false; }, {passive:true});
+  canvas.addEventListener("pointercancel", ()=>{ state.dragging = false; }, {passive:true});
 
   function drawEnvelope(x,y, openAmount){
     ctx.save();
@@ -332,7 +450,6 @@
     }
   }
 
-  // Wrap text so message stays inside note
   function wrapTextToLines(text, maxWidth){
     const rawLines = text.split("\n");
     const lines = [];
@@ -350,11 +467,9 @@
     return lines;
   }
 
-  // ✅ NOTE with your image as background INSIDE the box only
   function drawNote(x,y, alpha){
     const w=390, h=260;
 
-    // 1) Draw clipped image background inside rounded note
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(x,y);
@@ -369,21 +484,16 @@
       const scale = Math.max(w/iw, h/ih);
       const dw = iw * scale;
       const dh = ih * scale;
-      const dx = -dw/2;
-      const dy = -dh/2;
-      ctx.drawImage(noteBg, dx, dy, dw, dh);
+      ctx.drawImage(noteBg, -dw/2, -dh/2, dw, dh);
     } else {
       ctx.fillStyle = "#fffaf2";
       ctx.fillRect(-w/2, -h/2, w, h);
     }
 
-    // 2) Overlay for readability
     ctx.fillStyle = "rgba(255,255,255,0.78)";
     ctx.fillRect(-w/2, -h/2, w, h);
-
     ctx.restore();
 
-    // 3) Border + Text
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(x,y);
@@ -411,7 +521,6 @@
       ctx.fillText(line, -w/2 + 22, yy);
       yy += lineH;
     }
-
     ctx.restore();
   }
 
@@ -509,7 +618,6 @@
     let stemScale = 1, petalOpen = 1;
     let bob = Math.sin(now*0.008)*0.03;
 
-    // grow
     if(state.phase === 0){
       const p = easeOutCubic(clamp(state.t/growT,0,1));
       stemScale = lerp(0.25, 1.0, p);
@@ -520,7 +628,6 @@
       if(Math.random() < dt*6) spawnSparkle(baseX, baseY - 120, 1);
     }
 
-    // bloom
     if(state.phase === 1){
       const p = easeInOutSine(clamp((state.t - growT)/bloomT,0,1));
       stemScale = 1.0;
@@ -533,19 +640,23 @@
 
     let openAmount = 0, noteAlpha = 0;
 
-    // play
     if(state.phase === 2){
       drawCollectibles(now);
 
       if(!state.dragging){
         const accel = 1200;
         let ax = 0, ay = 0;
-        const k = (s)=>keys.has(s);
 
+        // Keyboard
+        const k = (s)=>keys.has(s);
         if(k("arrowleft")||k("a")) ax -= 1;
         if(k("arrowright")||k("d")) ax += 1;
         if(k("arrowup")||k("w")) ay -= 1;
         if(k("arrowdown")||k("s")) ay += 1;
+
+        // Joystick (touch)
+        ax += joyVec.x;
+        ay += joyVec.y;
 
         state.flower.vx += ax * accel * dt;
         state.flower.vy += ay * accel * dt;
@@ -585,7 +696,6 @@
       if(Math.random() < dt*6) spawnSparkle(flowerX, flowerY, 1);
     }
 
-    // deliver + note
     if(state.phase === 3 || state.phase === 4){
       const deliverElapsed = (now - (state._deliverStart || now)) / 1000;
 
@@ -609,13 +719,15 @@
     drawFlower(flowerX, flowerY, stemScale, bob, petalOpen);
 
     if(noteAlpha > 0){
-      drawNote(envX - 140, envY - 250, noteAlpha);
+      // Slightly adjust note position on small screens
+      const noteX = w < 420 ? envX - 10 : envX - 140;
+      const noteY = w < 420 ? envY - 280 : envY - 250;
+      drawNote(noteX, noteY, noteAlpha);
     }
 
     updateSparkles(dt);
     drawSparkles();
 
-    // HUD
     ctx.save();
     ctx.globalAlpha = 0.92;
     ctx.fillStyle = "rgba(255,255,255,.88)";
