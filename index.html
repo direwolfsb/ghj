@@ -466,72 +466,78 @@
     return lines;
   }
 
-  // ✅ RESPONSIVE NOTE BOX (fits small screens)
-  function drawNote(x,y, alpha){
-    const vw = window.innerWidth;
+  function drawNote(x, y, alpha){
+  const vw = window.innerWidth;
 
-    // scale down on small phones, keep normal size on bigger screens
-    const scale = Math.min(1, Math.max(0.82, vw / 420));
+  // Responsive scaling for small screens
+  const scale = Math.min(1, Math.max(0.82, vw / 420));
 
-    const w = 390 * scale;
-    const h = 260 * scale;
+  const w = 390 * scale;
+  const h = 260 * scale;
+  const radius = 16 * scale;
 
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(x,y);
-    ctx.rotate(-0.03);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x,y);
+  ctx.rotate(-0.03);
 
-    ctx.beginPath();
-    ctx.roundRect(-w/2, -h/2, w, h, 16 * scale);
-    ctx.clip();
+  ctx.beginPath();
+  ctx.roundRect(-w/2, -h/2, w, h, radius);
+  ctx.clip();
 
-    if(noteBgReady){
-      const iw = noteBg.naturalWidth, ih = noteBg.naturalHeight;
-      const s = Math.max(w/iw, h/ih);
-      const dw = iw * s;
-      const dh = ih * s;
-      ctx.drawImage(noteBg, -dw/2, -dh/2, dw, dh);
-    } else {
-      ctx.fillStyle = "#fffaf2";
-      ctx.fillRect(-w/2, -h/2, w, h);
-    }
-
-    // overlay for readability
-    ctx.fillStyle = "rgba(255,255,255,0.78)";
+  if(noteBgReady){
+    const iw = noteBg.naturalWidth;
+    const ih = noteBg.naturalHeight;
+    const s = Math.max(w/iw, h/ih);
+    ctx.drawImage(
+      noteBg,
+      -iw*s/2,
+      -ih*s/2,
+      iw*s,
+      ih*s
+    );
+  } else {
+    ctx.fillStyle = "#fffaf2";
     ctx.fillRect(-w/2, -h/2, w, h);
-    ctx.restore();
-
-    // border + text
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(x,y);
-    ctx.rotate(-0.03);
-
-    ctx.strokeStyle = "rgba(0,0,0,0.12)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(-w/2, -h/2, w, h, 16 * scale);
-    ctx.stroke();
-
-    ctx.fillStyle = "rgba(0,0,0,0.85)";
-    ctx.font = `700 ${18 * scale}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-    ctx.fillText(`To: ${TO_NAME}`, -w/2 + 22 * scale, -h/2 + 44 * scale);
-
-    ctx.font = `${18 * scale}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-    const maxTextWidth = w - 44 * scale;
-    const wrapped = wrapTextToLines(MESSAGE, maxTextWidth);
-
-    let yy = -h/2 + 80 * scale;
-    const lineH = 26 * scale;
-    const maxLines = Math.floor((h - 105 * scale) / lineH);
-
-    for(const line of wrapped.slice(0, maxLines)){
-      ctx.fillText(line, -w/2 + 22 * scale, yy);
-      yy += lineH;
-    }
-
-    ctx.restore();
   }
+
+  // readability overlay
+  ctx.fillStyle = "rgba(255,255,255,0.78)";
+  ctx.fillRect(-w/2, -h/2, w, h);
+  ctx.restore();
+
+  // border + text
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x,y);
+  ctx.rotate(-0.03);
+
+  ctx.strokeStyle = "rgba(0,0,0,0.12)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-w/2, -h/2, w, h, radius);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(0,0,0,0.85)";
+  ctx.font = `700 ${18 * scale}px system-ui`;
+  ctx.fillText(`To: ${TO_NAME}`, -w/2 + 22*scale, -h/2 + 44*scale);
+
+  ctx.font = `${18 * scale}px system-ui`;
+  const maxTextWidth = w - 44*scale;
+  const wrapped = wrapTextToLines(MESSAGE, maxTextWidth);
+
+  let yy = -h/2 + 80*scale;
+  const lineH = 26*scale;
+  const maxLines = Math.floor((h - 105*scale) / lineH);
+
+  for(const line of wrapped.slice(0, maxLines)){
+    ctx.fillText(line, -w/2 + 22*scale, yy);
+    yy += lineH;
+  }
+
+  ctx.restore();
+}
+
 
   function drawFlower(x,y, scale, bob, petalOpen){
     ctx.save();
